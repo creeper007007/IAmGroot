@@ -1,3 +1,4 @@
+# Initializes neo4j database, runs bloodhound FROM YOUR KALI, creates a .zip file of the extracted data, THEN runs bloodhound. 
 import os
 import zipfile
 import subprocess
