@@ -1,3 +1,5 @@
+# Runs the basic commands to get ligolo up and running on your kali machine, along with some helper text to finish the remaining setup
+
 import subprocess
 
 # Function to print colored text
