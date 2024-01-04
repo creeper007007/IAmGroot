@@ -1,3 +1,5 @@
+# With a valid set of domain user credentials, this script allows you to run Bloodhound against an Active Directory domain directly from your Kali host machine. 
+
 # Initializes neo4j database, runs bloodhound FROM YOUR KALI, creates a .zip file of the extracted data, THEN runs bloodhound. 
 import os
 import zipfile
