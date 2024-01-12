@@ -140,6 +140,8 @@ for command in download_commands:
 # After downloading instructions
 instructions = [
     f"{print_colored('# After downloading, execute the following commands:', 'green')}",
+    f"{print_colored('# For Windows:', 'green')} {print_colored(f'./agent.exe -ignore-cert -connect {download_ip}:11601', 'yellow')}",
+    f"{print_colored('# For Linux:', 'green')} {print_colored(f'./agent -ignore-cert -connect {download_ip}:11601', 'yellow')}",
     f"{print_colored('# In Ligolo:', 'green')} {print_colored('session', 'yellow')}",
     f"{print_colored('# In Ligolo:', 'green')} {print_colored('ifconfig', 'yellow')}",
     f"{print_colored('# In a separate terminal window:', 'green')} {print_colored(f'sudo ip route add <internal ip>.0/24 dev ligolo', 'yellow')}\n\n"
@@ -180,6 +182,6 @@ except FileNotFoundError:
     print(print_colored("Error: Ligolo proxy directory not found. Please provide the absolute path.", "red"))
     sys.exit(1)
 except subprocess.CalledProcessError as e:
-    print(print_colored(f"Error: {e}", "red"))
-    print("Shutting down...")
+    print(print_colored(f"Closing...", "red"))
+    #print("Shutting down...")
     sys.exit(1)
